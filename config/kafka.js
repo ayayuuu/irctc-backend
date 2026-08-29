@@ -1,43 +1,43 @@
 const { Kafka, logLevel } = require('kafkajs');
 const logger = require('./logger');
-const { config } = require('.');
-
+const {config} = require('.');
 const kafka = new Kafka({
      clientId: config.KAFKA_CLIENT_ID,
-     brokers: [config.KAFKA_BROKER],
+     brokers: [config.KAFKA_BROKER || 'localhost:9093'],
      logLevel: logLevel.ERROR,
-     retry: { initialRetryTime: 300, retries: 8, maxRetryTime: 30000 },
+     retry: {
+          initialRetryTime: 300,
+          retries: 8,
+          maxRetryTime: 30000,
+     },
 });
 
-const consumer = kafka.consumer({
-     groupId: 'search-service-group-v2',
-     sessionTimeout: 30000,
-     heartbeatInterval: 3000,
-});
-
-// Producer (used only for DLQ publishing)
 const producer = kafka.producer({
      allowAutoTopicCreation: true,
-     retry: { retries: 3 },
+     transactionTimeout: 30000,
+     idempotent: true, 
+     maxInFlightRequests: 5,
+     retry: {
+          retries: 5,
+     },
 });
 
-let isProducerConnected = false;
+let isConnected = false;
 
 const connectProducer = async () => {
-     if (!isProducerConnected) {
+     if (!isConnected) {
           await producer.connect();
-          isProducerConnected = true;
-          logger.info('Kafka producer connected (DLQ)');
+          isConnected = true;
+          logger.info('Kafka producer connected');
      }
 };
 
-const disconnectAll = async () => {
-     await consumer.disconnect();
-     if (isProducerConnected) {
+const disconnectProducer = async () => {
+     if (isConnected) {
           await producer.disconnect();
-          isProducerConnected = false;
+          isConnected = false;
+          logger.info('Kafka producer disconnected');
      }
-     logger.info('Kafka consumer disconnected');
 };
 
-module.exports = { kafka, consumer, producer, connectProducer, disconnectAll };
+module.exports = { kafka, producer, connectProducer, disconnectProducer };
